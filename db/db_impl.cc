@@ -1128,6 +1128,9 @@ Status DBImpl::Get(const ReadOptions& options,
   bool have_stat_update = false;
   Version::GetStats stats;
 
+
+  std::pair<int32_t, int64_t> queryStat{-1,0};
+
   // Unlock while reading from files and memtables
   {
     mutex_.Unlock();
@@ -1138,11 +1141,13 @@ Status DBImpl::Get(const ReadOptions& options,
     } else if (imm != NULL && imm->Get(lkey, value, &s)) {
       // Done
     } else {
-      s = current->Get(options, lkey, value, &stats);
+      s = current->Get(options, lkey, value, &stats, queryStat);
+      // Log(options_.info_log, "\n");
       have_stat_update = true;
     }
     mutex_.Lock();
   }
+  AccessStats_.Add(queryStat);
 
   if (have_stat_update && current->UpdateStats(stats)) {
     MaybeScheduleCompaction();
@@ -1439,6 +1444,45 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
     snprintf(buf, sizeof(buf), "%llu",
              static_cast<unsigned long long>(total_usage));
     value->append(buf);
+    return true;
+  } else if (in == "disk-access") {
+    char buf[400];
+    snprintf(buf, sizeof(buf),
+             "Terminated Level Accesses\n"
+             "Level   Times\n"
+             "--------------\n"
+             );
+    value->append(buf);
+    snprintf(
+          buf, sizeof(buf),
+          " -1  %8ld\n",
+          AccessStats_.levels[config::kNumLevels]);
+    value->append(buf);
+    for (int level = 0; level < config::kNumLevels; level++) {
+      snprintf(
+          buf, sizeof(buf),
+          "%3d  %8ld\n",
+          level,
+          AccessStats_.levels[level]);
+      value->append(buf);
+    }
+
+    snprintf(buf, sizeof(buf),
+             "Disk    Times\n"
+             "--------------\n"
+             );
+    value->append(buf);
+    std::vector<std::pair<int32_t, int64_t>> sortedAccess(AccessStats_.disk_reads.begin(), 
+            AccessStats_.disk_reads.end());
+    std::sort(sortedAccess.begin(), sortedAccess.end());
+    for (int access = 0; access < std::min((int32_t)sortedAccess.size(), 50); access++) {
+      snprintf(
+          buf, sizeof(buf),
+          "%3d  %8ld\n",
+          sortedAccess[access].first,
+          sortedAccess[access].second);
+      value->append(buf);
+    }
     return true;
   }
 

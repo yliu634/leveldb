@@ -1,6 +1,10 @@
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
+#include <iostream>
+#include <fstream>
+
+#include "db/dbformat.h"
 
 #include "leveldb/table.h"
 
@@ -225,7 +229,7 @@ Iterator* Table::NewIterator(const ReadOptions& options) const {
 
 Status Table::InternalGet(const ReadOptions& options, const Slice& k,
                           void* arg,
-                          void (*saver)(void*, const Slice&, const Slice&)) {
+                          int (*saver)(void*, const Slice&, const Slice&)) {
   Status s;
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
   iiter->Seek(k);
@@ -240,10 +244,25 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
     } else {
       Iterator* block_iter = BlockReader(this, options, iiter->value());
       block_iter->Seek(k);
+      int saverState = 0;
       if (block_iter->Valid()) {
-        (*saver)(arg, block_iter->key(), block_iter->value());
+        saverState = (*saver)(arg, block_iter->key(), block_iter->value());
       }
       s = block_iter->status();
+
+      // kNotFound equals to 0, false positive happened (only)
+      #if 1
+      if (saverState == 0 && iiter->status().ok() && s.ok()) {
+        std::ofstream logfile("./fasle_positive_stats.output", std::ios::app);
+        ParsedInternalKey pkey;
+        // std::string str = block_iter->key().ToString(); 
+        ParseInternalKey(k, &pkey);
+        logfile << "fp: " << pkey.user_key.ToString().substr(4) << std::endl;
+        logfile.close();
+      }
+      #endif
+      //
+
       delete block_iter;
     }
   }

@@ -265,7 +265,7 @@ struct Saver {
   std::string* value;
 };
 }
-static void SaveValue(void* arg, const Slice& ikey, const Slice& v) {
+static int SaveValue(void* arg, const Slice& ikey, const Slice& v) {
   Saver* s = reinterpret_cast<Saver*>(arg);
   ParsedInternalKey parsed_key;
   if (!ParseInternalKey(ikey, &parsed_key)) {
@@ -278,6 +278,7 @@ static void SaveValue(void* arg, const Slice& ikey, const Slice& v) {
       }
     }
   }
+  return s->state;
 }
 
 static bool NewestFirst(FileMetaData* a, FileMetaData* b) {
@@ -332,7 +333,8 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key,
 Status Version::Get(const ReadOptions& options,
                     const LookupKey& k,
                     std::string* value,
-                    GetStats* stats) {
+                    GetStats* stats,
+                    std::pair<int32_t, int64_t>& queryStat) {
   Slice ikey = k.internal_key();
   Slice user_key = k.user_key();
   const Comparator* ucmp = vset_->icmp_.user_comparator();
@@ -349,6 +351,7 @@ Status Version::Get(const ReadOptions& options,
   std::vector<FileMetaData*> tmp;
   FileMetaData* tmp2;
   for (int level = 0; level < config::kNumLevels; level++) {
+    queryStat.first = level;
     size_t num_files = files_[level].size();
     if (num_files == 0) continue;
 
@@ -390,6 +393,7 @@ Status Version::Get(const ReadOptions& options,
     }
 
     for (uint32_t i = 0; i < num_files; ++i) {
+      queryStat.second  = queryStat.second + 1;
       if (last_file_read != NULL && stats->seek_file == NULL) {
         // We have had more than one seek for this read.  Charge the 1st file.
         stats->seek_file = last_file_read;

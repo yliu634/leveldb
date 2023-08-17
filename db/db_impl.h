@@ -7,6 +7,8 @@
 
 #include <deque>
 #include <set>
+#include <cmath>
+#include <unordered_map>
 #include "db/dbformat.h"
 #include "db/log_writer.h"
 #include "db/snapshot.h"
@@ -189,6 +191,26 @@ class DBImpl : public DB {
     }
   };
   CompactionStats stats_[config::kNumLevels];
+
+
+  struct PointQueryStats {
+    int64_t levels[config::kNumLevels+1];
+    std::unordered_map<int32_t, int64_t> disk_reads{};
+
+    PointQueryStats() {
+      for (int level = 0; level < config::kNumLevels+1; level++) {
+        levels[level] = 0;
+      }
+    }
+    void Add(std::pair<int32_t, int64_t> QueryStat) {
+      if (QueryStat.first != -1)  
+        levels[QueryStat.first] ++;
+      else levels[config::kNumLevels] ++;
+      disk_reads[QueryStat.second] ++;
+    }
+  };
+  PointQueryStats AccessStats_;
+
 
   // No copying allowed
   DBImpl(const DBImpl&);
